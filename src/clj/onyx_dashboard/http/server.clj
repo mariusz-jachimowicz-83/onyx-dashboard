@@ -87,15 +87,16 @@
             conn (zk/connect (:zookeeper/address peer-config))
             refresh-fut (future (tenancy/refresh-deployments-watch send-f conn deployments))]
         (println "Http-kit server is running at" uri)
-        (assoc component 
-               :server server 
-               :refresh-fut refresh-fut
+        (assoc component
+               :conn              conn 
+               :server            server 
+               :refresh-fut       refresh-fut
                :event-handler-fut event-handler-fut 
-               :deployments deployments 
-               :tracking tracking))))
-  (stop [{:keys [server tracking deployments] :as component}]
+               :deployments       deployments 
+               :tracking          tracking))))
+  (stop [{:keys [server tracking deployments conn] :as component}]
     (println "Stopping HTTP Server")
-    (try 
+    (try
       (server :timeout 100)
       (finally 
         (try 
@@ -103,9 +104,15 @@
           (finally
             (try 
               (future-cancel (:event-handler-fut component))
+              (future-cancel (:refresh-fut component))
               (finally
-                (future-cancel (:refresh-fut component)))))))) 
-    (assoc component :server nil :event-handler-fut nil :deployments nil :tracking nil)))
+                (if (.. conn isStarted) (zk/close conn)))))))) 
+    (assoc component 
+           :conn nil 
+           :server nil 
+           :event-handler-fut nil 
+           :deployments nil 
+           :tracking nil)))
 
 (defn new-http-server [peer-config]
   (map->HttpServer {:peer-config peer-config}))
